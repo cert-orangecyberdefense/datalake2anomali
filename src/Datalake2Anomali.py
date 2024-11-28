@@ -136,7 +136,9 @@ class Datalake2Anomali:
             query_fields.append("tags")
 
         dtl = Datalake(
-            longterm_token=os.environ["OCD_DATALAKE_LONG_TERM_TOKEN"]
+            longterm_token=os.environ["OCD_DATALAKE_LONG_TERM_TOKEN"],
+            proxies=config.proxies,
+            verify=config.ssl_verify
         )
         coroutines = []
 
