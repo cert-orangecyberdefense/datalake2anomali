@@ -1,0 +1,7 @@
+version: "3"
+services:
+  datalake2anomali:
+    build: .
+    image: datalake2anomali
+    restart: always
+    network_mode: "host"

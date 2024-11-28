@@ -1,0 +1,49 @@
+# Anomali classification setting (visibility) of uploaded indicators - public or private
+anomali_classification = "private"
+
+# Default iType for Anomali observable
+default_itype = {
+    "domain": "suspicious_domain",
+    "srcip": "actor_ip",
+    "url": "suspicious_url",
+    "email": "suspicious_email",
+    "md5": "mal_md5"
+}
+
+# TLP for Anomali tags (red or white)
+#   * red —> private, or visible to your organization only.
+#   * white -> public, or visible to all ThreatStream users with access to the data.
+tags_tlp = "white"
+
+# Anomali expiration delay for observables should be higher than run period (upload_frequency)
+# (in hours)
+anomali_expiration_period = 2
+
+# Con settings of the integration (in hours)
+run_as_cron = False
+upload_frequency = 1
+
+# Add tags from Datalake
+add_dtl_tags = False
+
+# Datalake queries (bulk search) with query_hash
+datalake_queries = [
+    {
+        "query_hash": "346f3acbcb29f476d56b6689c36ea6d4",
+        "dataset_name": "ocd_peerpressure_c2_tracker_ips",
+        "anomali_severity": "very-high",
+        "anomali_itype": {
+            "srcip": "c2_ip"
+        }
+    }
+]
+
+# Logger config
+verbose_log = False
+
+# Set proxy if needed, if not keep empty
+# Follow Python requests format: https://requests.readthedocs.io/en/latest/user/advanced/#proxies
+proxies = {}
+
+# SSL verify
+ssl_verify = True
