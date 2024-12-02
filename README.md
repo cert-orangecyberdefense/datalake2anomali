@@ -33,13 +33,17 @@ The `datalake_queries` defines the list of queries to export indicators from the
 
 ## Usage
 You can use **Docker** or launch the connector as a standalone Python **script**.
+
 ### Docker
-To launch the connector execute the CLI command `docker-compose up -d`, you can then see the logs with the CLI command `docker-compose logs -f datalake2anomali`.
+To launch the connector execute the CLI command `docker compose up --build -d`, you can then see the logs with the CLI command `docker compose logs -f datalake2anomali`.
+Or you can use the make commands `start_docker`|`stop_docker`
 
 ### Python script
 To launch the connector out of docker you can follow this steps:
-1) create a dedicated Python virtual environment with the following command `python3 -m venv venv`
-2) activate the venv `source venv/bin/activate`
+1) create a dedicated Python virtual environment with the following command `python3 -m venv .venv`
+2) activate the venv `source .venv/bin/activate`
 3) install requirements from `src\requirements.txt` with `pip install -r src/requirements.txt`
 4) launch the connector `python src/core.py`
+5) (You can exit the virtual environment with the `deactivate` command)
+Or you can use the make command `start_standalone`
 

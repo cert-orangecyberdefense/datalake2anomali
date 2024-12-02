@@ -19,7 +19,7 @@ tags_tlp = "white"
 # (in hours)
 anomali_expiration_period = 2
 
-# Con settings of the integration (in hours)
+# Cron settings of the integration (in hours)
 run_as_cron = False
 upload_frequency = 1
 
@@ -27,6 +27,7 @@ upload_frequency = 1
 add_dtl_tags = False
 
 # Datalake queries (bulk search) with query_hash
+# possible values for anomali_severity : low, medium, high, very-high
 datalake_queries = [
     {
         "query_hash": "346f3acbcb29f476d56b6689c36ea6d4",
