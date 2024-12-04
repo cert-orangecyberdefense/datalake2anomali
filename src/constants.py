@@ -1,12 +1,25 @@
-DATASET_NAME = 0
-ANOMALI_TYPE = 1
-ANOMALI_ITYPE = 2
-ANOMALI_SEVERITY = 3
-ATOM_TYPE = 4
-ATOM_VALUE = 5
-HASHES_MD5 = 6
-THREAT_SCORES = 7
-THREAT_TAGS = 8
+INDICATOR_TEMPLATE = {
+    "dataset_name": "",
+    "anomali_type": "",
+    "anomali_itype": "",
+    "anomali_severity": "",
+    "atom_type": "",
+    "atom_value": "",
+    "hashes_md5": "",
+    "threat_scores": {},
+    "threat_tags": [],
+}
+
+ANOMALI_PAYLOAD_TEMPLATE = {
+    "meta": {
+        "allow_update": True,
+        "enrich": False,
+        "classification": "",
+        "expiration_ts": "%Y-%m-%dT%H:%M:%S",
+    },
+    "objects": [],
+}
+ANOMALI_OBJECT_TEMPLATE = {"confidence": "", "itype": "", "severity": "", "tags": []}
 
 DTL_TO_ANOMALI_TYPE = {
     "fqdn": "domain",
@@ -14,5 +27,5 @@ DTL_TO_ANOMALI_TYPE = {
     "ip": "srcip",
     "url": "url",
     "email": "email",
-    "file": "md5"
+    "file": "md5",
 }

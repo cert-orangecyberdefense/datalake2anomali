@@ -3,5 +3,5 @@ services:
   datalake2anomali:
     build: .
     image: datalake2anomali
-    restart: no
+    restart: "no"
     network_mode: "host"

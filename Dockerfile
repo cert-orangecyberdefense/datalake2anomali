@@ -5,6 +5,7 @@ WORKDIR /code
 COPY src /code
 
 RUN groupadd app && useradd -g app app
+RUN mkdir -p /code/logs
 RUN chown -R app:app /code
 RUN pip install -r requirements.txt
 
