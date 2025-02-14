@@ -162,6 +162,7 @@ class Datalake2Anomali:
             longterm_token=os.environ["OCD_DATALAKE_LONG_TERM_TOKEN"],
             proxies=config.proxies,
             verify=config.ssl_verify,
+            env=os.getenv("OCD_DATALAKE_ENV", "prod"),
         )
         coroutines = []
         valid_datalake_queries = []
