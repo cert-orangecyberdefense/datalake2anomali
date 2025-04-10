@@ -12,13 +12,15 @@ from constants import (
     ANOMALI_PAYLOAD_TEMPLATE,
     ANOMALI_OBJECT_TEMPLATE,
     INDICATOR_TEMPLATE,
+
 )
+from models import AnomaliTipReportModel, PatchTipReportModel
 
 load_dotenv()
 
-
 class AnomaliApi:
 
+    GENERIC_WORLD_WATCH_BULLETIN_TAG = "world_watch_advisory"
     def __init__(
         self,
         ssl_verify: bool,
@@ -43,7 +45,7 @@ class AnomaliApi:
     def headers(self) -> dict:
         return {
             "Authorization": f"apikey {self.anomali_user}:{self.anomali_api_key}",
-            "Content-Type": "application/json",
+            "content-type": "application/json",
         }
 
     def init(self) -> bool:
@@ -127,6 +129,121 @@ class AnomaliApi:
             self.logger.debug(f"Request Payload: {payload}")
 
 
+    def check_if_bulletin_exists_in_anomali(self, id: int):
+        url_params = f"tags={self.GENERIC_WORLD_WATCH_BULLETIN_TAG}&tags=world_watch_{id}&model_type=tipreport"
+        get_report_by_id = f"{self.anomali_url}/api/v1/threat_model_search/?{url_params}"
+        r = requests.get(get_report_by_id, headers=self.headers)
+        self.logger.info(f"Checking if report exists on url {get_report_by_id}")
+        tipreport_list = r.json()['objects']
+
+        if not (len(tipreport_list) > 0):
+            self.logger.info(f"Did not find previous report with worldwatch id {id}")
+            return None
+
+        return tipreport_list[0]['id']
+
+    def get_world_watch_tag(self, id):
+        return f"world_watch_{id}"
+
+    def map_ww_content_block_to_anomali(self, tipreport_id, content_block_list: list):
+        mapped_blocks = [
+            PatchTipReportModel(
+                body=block['executive_summary'],
+                modified_ts=block['timestamp_updated'],
+                name=block["title"],
+                tags=[
+                    self.GENERIC_WORLD_WATCH_BULLETIN_TAG,
+                    self.get_world_watch_tag(tipreport_id),
+                    *block['tags']
+                ]
+            ).model_dump()
+            for block in content_block_list
+        ]
+
+        # self.logger.info(f"Debug mapped blocks {mapped_blocks}")
+
+        mapped_blocks = list(
+            filter(
+                lambda x: datetime.strptime(x['modified_ts'], "%Y-%m-%dT%H:%M:%SZ") > datetime.now() - timedelta(hours=config.upload_frequency),
+                mapped_blocks
+            )
+        )
+
+        return mapped_blocks
+
+
+    def patch_existing_tipreport(self, advisory, tipreport_id):
+        patch_url = f"{self.anomali_url}/api/v1/tipreport/{tipreport_id}/"
+
+        self.logger.info(f"Applying patch content blocks to existing tipreport {tipreport_id}")
+
+        mapped_blocks = self.map_ww_content_block_to_anomali(tipreport_id, advisory[1]['content_blocks'])
+
+        patch_payload = {
+            "objects": mapped_blocks
+        }
+
+        response = requests.patch(url=patch_url,
+                    json=patch_payload,
+                    headers=self.headers)
+
+
+        self.logger.info(f"Patch response: {response.status_code}, {response.content}")
+
+
+
+
+    def add_new_tipreport(self, advisory):
+        add_tipreport_url = f"{self.anomali_url}/api/v1/tipreport/"
+
+        advisory_id = advisory[1]['id']
+        content_blocks = advisory[1]['content_blocks']
+        earliest_content_block = advisory[1]['content_blocks'][-1]
+
+        report_model: AnomaliTipReportModel = AnomaliTipReportModel(
+            body=earliest_content_block['executive_summary'],
+            created_ts=advisory[1]['timestamp_created'],
+            modified_ts=advisory[1]['timestamp_updated'],
+            name=advisory[1]['title'],
+            tags=[
+                self.get_world_watch_tag(advisory_id),
+                self.GENERIC_WORLD_WATCH_BULLETIN_TAG
+            ]
+        )
+
+        response = requests.post(add_tipreport_url, json=report_model.model_dump(), headers=self.headers)
+        self.logger.info(f"Added bulletin - code: {response.status_code}, content:")
+
+        tipreport_id: int = response.json()['id']
+        patch_url = f"{self.anomali_url}/api/v1/tipreport/{tipreport_id}"
+        mapped_blocks = self.map_ww_content_block_to_anomali(
+                            tipreport_id,
+                            content_blocks[:-1]
+                        )
+
+        if len(mapped_blocks) > 1:
+            patch_payload = {"objects": mapped_blocks}
+            requests.patch(
+                url=patch_url,
+                json=patch_payload,
+                headers=self.headers
+            )
+
+            self.logger.info(f"Updated newly created tipreport {tipreport_id} history")
+
+
+    def upload_bulletins(self, advisories):
+
+        for advisory in advisories:
+            advisory_id = advisory[1]['id']
+            tipreport_id = self.check_if_bulletin_exists_in_anomali(advisory_id)
+            if tipreport_id:
+                self.patch_existing_tipreport(advisory, tipreport_id)
+            else:
+                self.add_new_tipreport(advisory)
+
+
+
 class Datalake2Anomali:
     """
     A class that handles all the logic of the connector: getting the iocs from
@@ -138,6 +255,20 @@ class Datalake2Anomali:
         logger,
     ):
         self.logger = logger
+        self.world_watch_url = os.environ["WORLD_WATCH_URL"]
+        self.world_watch_token = os.environ["WORLD_WATCH_TOKEN"]
+        self.anomali_api = AnomaliApi(
+            ssl_verify=config.ssl_verify, proxies=config.proxies, logger=self.logger
+        )
+
+
+    @property
+    def world_watch_headers(self) -> dict:
+        return {
+            "accept": "application/json",
+            "authorization": os.environ.get('WORLD_WATCH_TOKEN')
+            }
+
 
     def _checkProvidedDatalakeQuery(self, query):
         if (
@@ -181,12 +312,15 @@ class Datalake2Anomali:
         loop = asyncio.get_event_loop()
         future = asyncio.gather(*coroutines)
         results = loop.run_until_complete(future)
+
         for result in results:
             self.logger.info(
                 "Get {} threats from Datalake with {} query_hash".format(
                     result["count"], result["advanced_query_hash"]
                 )
             )
+
+        self.logger.debug(f"Results from datalake {results}")
 
         return results, valid_datalake_queries
 
@@ -240,14 +374,31 @@ class Datalake2Anomali:
         return indicators
 
     def uploadIndicatorsToAnomali(self):
-        anomali_api = AnomaliApi(
-            ssl_verify=config.ssl_verify, proxies=config.proxies, logger=self.logger
-        )
         bulk_searches_results, valid_datalake_queries = self._getDatalakeThreats()
         indicators = self._generateIndicators(
             bulk_searches_results, valid_datalake_queries
         )
-        payload = anomali_api._prepareIndicatorPayload(indicators=indicators)
-        anomali_api.uploadPayload(payload)
+        payload = self.anomali_api._prepareIndicatorPayload(indicators=indicators)
+        self.anomali_api.uploadPayload(payload)
 
         return
+
+    def _get_bulletins_from_world_watch(self, hours: int):
+        last_hour_time_string = (datetime.now() - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        advisory_endpoint = f"{self.world_watch_url}/api/advisory/?updated_after={last_hour_time_string}"
+
+        r = requests.get(advisory_endpoint, headers=self.world_watch_headers)
+
+        specific_advisory_endpoint = f"{self.world_watch_url}/api/advisory"
+        complete_advisories = []
+
+        for item in r.json()['items']:
+            complete_advisory = requests.get(f"{specific_advisory_endpoint}/{item['id']}", headers=self.world_watch_headers).json()
+            complete_advisories.append((item, complete_advisory))
+
+        return complete_advisories
+
+
+    def upload_bulletins(self):
+        last_advisories = self._get_bulletins_from_world_watch(hours=config.upload_frequency)
+        self.anomali_api.upload_bulletins(last_advisories)
