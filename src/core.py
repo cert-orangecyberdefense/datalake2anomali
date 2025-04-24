@@ -30,20 +30,24 @@ def _build_logger():
 
     return logger
 
+def upload_data():
+    datalake2anomali = Datalake2Anomali(logger)
+    datalake2anomali.uploadIndicatorsToAnomali()
+    datalake2anomali.upload_bulletins()
 
 def main():
     # create the connector
-    datalake2anomali = Datalake2Anomali(logger)
 
     if config.run_as_cron:
+        upload_data()
         schedule.every(config.upload_frequency).hours.do(
-            datalake2anomali.uploadIndicatorsToAnomali
+            upload_data
         )
         while True:
             schedule.run_pending()
             time.sleep(1)
     else:
-        datalake2anomali.uploadIndicatorsToAnomali()
+        upload_data()
 
 
 if __name__ == "__main__":

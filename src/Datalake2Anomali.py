@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import asyncio
+from http.client import HTTPException
 import config
 import copy
 import os
@@ -15,9 +16,11 @@ from constants import (
 
 )
 from models import AnomaliTipReportModel, PatchTipReportModel
+from dateutil import parser
 
 load_dotenv()
 
+SUCCESSFUL_HTTP_CODES = [200, 201, 202]
 WORLD_WATCH_TIME_FORMAT: str = "%Y-%m-%dT%H:%M:%SZ"
 ANOMALI_TIME_FORMAT: str = "%Y-%m-%dT%H:%M:%S.%f%z"
 
@@ -107,6 +110,8 @@ class AnomaliApi:
             verify=self.ssl_verify,
             proxies=self.proxies,
         )
+
+
         if r.status_code == 202:
             self.logger.debug(
                 f"Intelligence uploaded successfully to {self.anomali_url}"
@@ -135,28 +140,37 @@ class AnomaliApi:
     def check_if_bulletin_exists_in_anomali(self, id: int):
         url_params = f"tags={self.GENERIC_WORLD_WATCH_BULLETIN_TAG}&tags=world_watch_{id}&model_type=tipreport"
         get_report_by_id = f"{self.anomali_url}/api/v1/threat_model_search/?{url_params}"
+
         r = requests.get(get_report_by_id, headers=self.headers)
-        self.logger.info(f"Checking if report exists on url {get_report_by_id}")
+
+        if r.status_code not in SUCCESSFUL_HTTP_CODES:
+            raise HTTPException(f"Cannot get report from anomali, {r.content}, {r.status_code}")
+
         tipreport_list = r.json()['objects']
 
         if not (len(tipreport_list) > 0):
-            self.logger.info(f"Did not find previous report with worldwatch id {id}")
+            self.logger.debug(f"Did not find previous report with worldwatch id {id}")
             return None, None
 
 
         last_modified = tipreport_list[0]['modified_ts']
-        dt_last_modified = datetime.fromisoformat(last_modified)
+        dt_last_modified = parser.parse(last_modified)
 
         return tipreport_list[0]['id'], dt_last_modified
 
 
     def get_datetime_of_last_world_watch_report(self):
         query_params = f"?model_type=tipreport&tags={self.GENERIC_WORLD_WATCH_BULLETIN_TAG}&limit=1"
-        url = f"{self.anomali_url}/{query_params}"
+        url = f"{self.anomali_url}/api/v1/threat_model_search/{query_params}"
         response = requests.get(url, headers=self.headers)
+
+        if response.status_code not in SUCCESSFUL_HTTP_CODES:
+            raise HTTPException(f"Cannot get tipreports from ANOMALI, {response.content}, {response.status_code}")
+
         if len(response.json()['objects']) == 0:
             return None
-        return response.json()['objects'][0]['modified_ts']
+
+        return parser.parse(response.json()['objects'][0]['modified_ts'])
 
     def get_world_watch_tag(self, id):
         return f"world_watch_{id}"
@@ -165,7 +179,7 @@ class AnomaliApi:
         mapped_blocks = [
             PatchTipReportModel(
                 body=block['executive_summary'],
-                modified_ts=datetime.strftime(datetime.strptime(block['timestamp_updated'], WORLD_WATCH_TIME_FORMAT), ANOMALI_TIME_FORMAT),
+                modified_ts=datetime.strftime(parser.parse(block['timestamp_updated']), ANOMALI_TIME_FORMAT),
                 name=block["title"],
                 tags=[
                     self.GENERIC_WORLD_WATCH_BULLETIN_TAG,
@@ -180,12 +194,9 @@ class AnomaliApi:
         if last_modified:
             compared_dt = last_modified
 
-        for block in mapped_blocks:
-            print(f"Last updated block was at {block['modified_ts']}")
-
         mapped_blocks = list(
             filter(
-                lambda x: datetime.strptime(x['modified_ts'], ANOMALI_TIME_FORMAT).replace(tzinfo=timezone.utc) > compared_dt.replace(tzinfo=timezone.utc),
+                lambda x: parser.parse(x['modified_ts']).replace(tzinfo=timezone.utc) > compared_dt.replace(tzinfo=timezone.utc),
                 mapped_blocks
             )
         )
@@ -196,9 +207,9 @@ class AnomaliApi:
     def patch_existing_tipreport(self, advisory, tipreport_id, last_modified):
         patch_url = f"{self.anomali_url}/api/v1/tipreport/{tipreport_id}/"
 
-        self.logger.info(f"Applying patch content blocks to existing tipreport {tipreport_id}, last modified at {last_modified.strftime("%B %d, %Y %I:%M %p")}")
+        self.logger.debug(f"Applying patch content blocks to existing tipreport {tipreport_id}, last modified at {last_modified.strftime('%B %d, %Y %I:%M %p')}")
 
-        mapped_blocks = self.map_ww_content_block_to_anomali(tipreport_id, advisory[1]['content_blocks'], last_modified)
+        mapped_blocks = self.map_ww_content_block_to_anomali(tipreport_id, advisory['content_blocks'], last_modified)
 
         patch_payload = {
             "objects": mapped_blocks
@@ -208,8 +219,11 @@ class AnomaliApi:
                     json=patch_payload,
                     headers=self.headers)
 
+        if response.status_code not in SUCCESSFUL_HTTP_CODES:
+            raise HTTPException(f"Cannot patch report, {response.content}, {response.status_code}")
 
-        self.logger.info(f"Patch response: {response.status_code}, {response.content}")
+
+        self.logger.debug(f"Patch response: {response.status_code}, {response.content}")
 
 
 
@@ -217,15 +231,15 @@ class AnomaliApi:
     def add_new_tipreport(self, advisory):
         add_tipreport_url = f"{self.anomali_url}/api/v1/tipreport/"
 
-        advisory_id = advisory[1]['id']
-        content_blocks = advisory[1]['content_blocks']
-        earliest_content_block = advisory[1]['content_blocks'][-1]
+        advisory_id = advisory['id']
+        content_blocks = advisory['content_blocks']
+        earliest_content_block = advisory['content_blocks'][-1]
 
         report_model: AnomaliTipReportModel = AnomaliTipReportModel(
             body=earliest_content_block['executive_summary'],
-            created_ts=advisory[1]['timestamp_created'],
-            modified_ts=advisory[1]['timestamp_updated'],
-            name=advisory[1]['title'],
+            created_ts=advisory['timestamp_created'],
+            modified_ts=advisory['timestamp_updated'],
+            name=advisory['title'],
             tags=[
                 self.get_world_watch_tag(advisory_id),
                 self.GENERIC_WORLD_WATCH_BULLETIN_TAG
@@ -233,7 +247,8 @@ class AnomaliApi:
         )
 
         response = requests.post(add_tipreport_url, json=report_model.model_dump(), headers=self.headers)
-        self.logger.info(f"Added bulletin - code: {response.status_code}, content:")
+
+        self.logger.debug("Added new bulletin")
 
         tipreport_id: int = response.json()['id']
         patch_url = f"{self.anomali_url}/api/v1/tipreport/{tipreport_id}/"
@@ -244,19 +259,22 @@ class AnomaliApi:
 
         if len(mapped_blocks) > 1:
             patch_payload = {"objects": mapped_blocks}
-            requests.patch(
+
+            r = requests.patch(
                 url=patch_url,
                 json=patch_payload,
                 headers=self.headers
             )
 
-            self.logger.info(f"Updated newly created tipreport {tipreport_id} history")
+            if r.status_code not in SUCCESSFUL_HTTP_CODES:
+                raise HTTPException(f"Cannot patch bulletin in anomali, {r.content}, {r.status_code}")
+
+            self.logger.debug(f"Updated newly created tipreport {tipreport_id} history")
 
 
     def upload_bulletins(self, advisories):
-
         for advisory in advisories:
-            advisory_id = advisory[1]['id']
+            advisory_id = advisory['id']
             tipreport_id, last_modified = self.check_if_bulletin_exists_in_anomali(advisory_id)
             if tipreport_id:
                 self.patch_existing_tipreport(advisory, tipreport_id, last_modified)
@@ -408,22 +426,39 @@ class Datalake2Anomali:
         updated_after_string = (datetime.now() - timedelta(hours=config.upload_frequency)).strftime(WORLD_WATCH_TIME_FORMAT)
 
         if not config.run_as_cron:
-            updated_after_string = self.anomali_api.get_datetime_of_last_world_watch_report()
+            last_time = self.anomali_api.get_datetime_of_last_world_watch_report()
+
+            if last_time:
+                updated_after_string = last_time.strftime(WORLD_WATCH_TIME_FORMAT)
 
         advisory_endpoint = f"{self.world_watch_url}/api/advisory/?updated_after={updated_after_string}"
 
+
         r = requests.get(advisory_endpoint, headers=self.world_watch_headers)
+
+        if r.status_code not in SUCCESSFUL_HTTP_CODES:
+            raise HTTPException(f"Cannot get bulletins from world watch, {r.content}, {r.status_code}")
 
         specific_advisory_endpoint = f"{self.world_watch_url}/api/advisory"
         complete_advisories = []
 
         for item in r.json()['items']:
-            complete_advisory = requests.get(f"{specific_advisory_endpoint}/{item['id']}", headers=self.world_watch_headers).json()
-            complete_advisories.append((item, complete_advisory))
+            r = requests.get(f"{specific_advisory_endpoint}/{item['id']}", headers=self.world_watch_headers)
+
+            if r.status_code not in SUCCESSFUL_HTTP_CODES:
+                raise HTTPException(f"Cannot get complete advisory, {r.content}, {r.status_code}")
+
+            complete_advisory = r.json()
+            complete_advisories.append(complete_advisory)
 
         return complete_advisories
 
 
     def upload_bulletins(self):
-        last_advisories = self._get_bulletins_from_world_watch()
-        self.anomali_api.upload_bulletins(last_advisories)
+        try:
+            last_advisories = self._get_bulletins_from_world_watch()
+            self.anomali_api.upload_bulletins(last_advisories)
+        except HTTPException as e:
+            self.logger.error(f"Unexpected http error: {repr(e)}")
+        except Exception as e:
+            self.logger.error(f"Unexpected runtime error: {repr(e)}")
