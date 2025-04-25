@@ -138,10 +138,13 @@ class AnomaliApi:
 
 
     def check_if_bulletin_exists_in_anomali(self, id: int):
-        url_params = f"tags={self.GENERIC_WORLD_WATCH_BULLETIN_TAG}&tags=world_watch_{id}&model_type=tipreport"
-        get_report_by_id = f"{self.anomali_url}/api/v1/threat_model_search/?{url_params}"
+        get_report_by_id = f"{self.anomali_url}/api/v1/threat_model_search/"
 
-        r = requests.get(get_report_by_id, headers=self.headers)
+        r = requests.get(get_report_by_id, headers=self.headers, params={
+            "tags": self.GENERIC_WORLD_WATCH_BULLETIN_TAG,
+            "tags": f"world_watch_{id}",
+            "model_type": "tipreport"
+        })
 
         if r.status_code not in SUCCESSFUL_HTTP_CODES:
             raise HTTPException(f"Cannot get report from anomali, {r.content}, {r.status_code}")
@@ -160,9 +163,13 @@ class AnomaliApi:
 
 
     def get_datetime_of_last_world_watch_report(self):
-        query_params = f"?model_type=tipreport&tags={self.GENERIC_WORLD_WATCH_BULLETIN_TAG}&limit=1"
-        url = f"{self.anomali_url}/api/v1/threat_model_search/{query_params}"
-        response = requests.get(url, headers=self.headers)
+        url = f"{self.anomali_url}/api/v1/threat_model_search/"
+
+        response = requests.get(url, headers=self.headers, params={
+            "model_type": "tipreport",
+            "tags": self.GENERIC_WORLD_WATCH_BULLETIN_TAG,
+            "limit": "1"
+        })
 
         if response.status_code not in SUCCESSFUL_HTTP_CODES:
             raise HTTPException(f"Cannot get tipreports from ANOMALI, {response.content}, {response.status_code}")
@@ -207,13 +214,17 @@ class AnomaliApi:
     def patch_existing_tipreport(self, advisory, tipreport_id, last_modified):
         patch_url = f"{self.anomali_url}/api/v1/tipreport/{tipreport_id}/"
 
-        self.logger.debug(f"Applying patch content blocks to existing tipreport {tipreport_id}, last modified at {last_modified.strftime('%B %d, %Y %I:%M %p')}")
 
         mapped_blocks = self.map_ww_content_block_to_anomali(tipreport_id, advisory['content_blocks'], last_modified)
 
         patch_payload = {
             "objects": mapped_blocks
         }
+        if len(mapped_blocks) == 0:
+            self.logger.info(f"Tipreport {tipreport_id} already up to date")
+            return
+
+        self.logger.debug(f"Applying patch content blocks to existing tipreport {tipreport_id}, last modified at {last_modified.strftime('%B %d, %Y %I:%M %p')}")
 
         response = requests.patch(url=patch_url,
                     json=patch_payload,
@@ -328,11 +339,13 @@ class Datalake2Anomali:
         if config.add_dtl_tags:
             query_fields.append("tags")
 
+        environment = os.environ.get("OCD_DATALAKE_ENV")
+
         dtl = Datalake(
             longterm_token=os.environ["OCD_DATALAKE_LONG_TERM_TOKEN"],
             proxies=config.proxies,
             verify=config.ssl_verify,
-            env=os.getenv("OCD_DATALAKE_ENV", "prod"),
+            env=environment if environment else "prod"
         )
         coroutines = []
         valid_datalake_queries = []
@@ -432,10 +445,14 @@ class Datalake2Anomali:
             if last_time:
                 updated_after_string = last_time.strftime(WORLD_WATCH_TIME_FORMAT)
 
-        advisory_endpoint = f"{self.world_watch_url}/api/advisory/?updated_after={updated_after_string}"
+        advisory_endpoint = f"{self.world_watch_url}/api/advisory/"
 
 
-        r = requests.get(advisory_endpoint, headers=self.world_watch_headers)
+        r = requests.get(advisory_endpoint,
+            headers=self.world_watch_headers,
+            params={
+                "updated_after": updated_after_string
+        })
 
         if r.status_code not in SUCCESSFUL_HTTP_CODES:
             raise HTTPException(f"Cannot get bulletins from world watch, {r.content}, {r.status_code}")
