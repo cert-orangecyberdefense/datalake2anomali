@@ -207,13 +207,17 @@ class AnomaliApi:
     def patch_existing_tipreport(self, advisory, tipreport_id, last_modified):
         patch_url = f"{self.anomali_url}/api/v1/tipreport/{tipreport_id}/"
 
-        self.logger.debug(f"Applying patch content blocks to existing tipreport {tipreport_id}, last modified at {last_modified.strftime('%B %d, %Y %I:%M %p')}")
 
         mapped_blocks = self.map_ww_content_block_to_anomali(tipreport_id, advisory['content_blocks'], last_modified)
 
         patch_payload = {
             "objects": mapped_blocks
         }
+        if len(mapped_blocks) == 0:
+            self.logger.info(f"Tipreport {tipreport_id} already up to date")
+            return
+
+        self.logger.debug(f"Applying patch content blocks to existing tipreport {tipreport_id}, last modified at {last_modified.strftime('%B %d, %Y %I:%M %p')}")
 
         response = requests.patch(url=patch_url,
                     json=patch_payload,
