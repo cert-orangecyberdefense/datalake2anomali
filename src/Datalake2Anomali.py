@@ -221,7 +221,7 @@ class AnomaliApi:
             "objects": mapped_blocks
         }
         if len(mapped_blocks) == 0:
-            self.logger.info(f"Tipreport {tipreport_id} already up to date")
+            self.logger.debug(f"Tipreport {tipreport_id} already up to date")
             return
 
         self.logger.debug(f"Applying patch content blocks to existing tipreport {tipreport_id}, last modified at {last_modified.strftime('%B %d, %Y %I:%M %p')}")
@@ -343,6 +343,7 @@ class Datalake2Anomali:
             longterm_token=os.environ["OCD_DATALAKE_LONG_TERM_TOKEN"],
             proxies=config.proxies,
             verify=config.ssl_verify,
+            env=os.getenv("OCD_DATALAKE_ENV", "prod")
         )
         coroutines = []
         valid_datalake_queries = []
