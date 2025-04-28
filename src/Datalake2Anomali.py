@@ -138,10 +138,13 @@ class AnomaliApi:
 
 
     def check_if_bulletin_exists_in_anomali(self, id: int):
-        url_params = f"tags={self.GENERIC_WORLD_WATCH_BULLETIN_TAG}&tags=world_watch_{id}&model_type=tipreport"
-        get_report_by_id = f"{self.anomali_url}/api/v1/threat_model_search/?{url_params}"
+        get_report_by_id = f"{self.anomali_url}/api/v1/threat_model_search/"
 
-        r = requests.get(get_report_by_id, headers=self.headers)
+        r = requests.get(get_report_by_id, headers=self.headers, params={
+            "tags": self.GENERIC_WORLD_WATCH_BULLETIN_TAG,
+            "tags": f"world_watch_{id}",
+            "model_type": "tipreport"
+        })
 
         if r.status_code not in SUCCESSFUL_HTTP_CODES:
             raise HTTPException(f"Cannot get report from anomali, {r.content}, {r.status_code}")
@@ -160,9 +163,13 @@ class AnomaliApi:
 
 
     def get_datetime_of_last_world_watch_report(self):
-        query_params = f"?model_type=tipreport&tags={self.GENERIC_WORLD_WATCH_BULLETIN_TAG}&limit=1"
-        url = f"{self.anomali_url}/api/v1/threat_model_search/{query_params}"
-        response = requests.get(url, headers=self.headers)
+        url = f"{self.anomali_url}/api/v1/threat_model_search/"
+
+        response = requests.get(url, headers=self.headers, params={
+            "model_type": "tipreport",
+            "tags": self.GENERIC_WORLD_WATCH_BULLETIN_TAG,
+            "limit": "1"
+        })
 
         if response.status_code not in SUCCESSFUL_HTTP_CODES:
             raise HTTPException(f"Cannot get tipreports from ANOMALI, {response.content}, {response.status_code}")
@@ -435,10 +442,14 @@ class Datalake2Anomali:
             if last_time:
                 updated_after_string = last_time.strftime(WORLD_WATCH_TIME_FORMAT)
 
-        advisory_endpoint = f"{self.world_watch_url}/api/advisory/?updated_after={updated_after_string}"
+        advisory_endpoint = f"{self.world_watch_url}/api/advisory/"
 
 
-        r = requests.get(advisory_endpoint, headers=self.world_watch_headers)
+        r = requests.get(advisory_endpoint,
+            headers=self.world_watch_headers,
+            params={
+                "updated_after": updated_after_string
+        })
 
         if r.status_code not in SUCCESSFUL_HTTP_CODES:
             raise HTTPException(f"Cannot get bulletins from world watch, {r.content}, {r.status_code}")
