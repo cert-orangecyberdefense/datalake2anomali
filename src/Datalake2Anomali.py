@@ -102,6 +102,7 @@ class AnomaliApi:
         return payload
 
     def uploadPayload(self, payload):
+
         r = requests.request(
             "PATCH",
             self.intelligence_url,
@@ -182,47 +183,23 @@ class AnomaliApi:
     def get_world_watch_tag(self, id):
         return f"world_watch_{id}"
 
-    def map_ww_content_block_to_anomali(self, tipreport_id, content_block_list: list, last_modified = None):
-        mapped_blocks = [
-            PatchTipReportModel(
-                body=block['executive_summary'],
-                modified_ts=datetime.strftime(parser.parse(block['timestamp_updated']), ANOMALI_TIME_FORMAT),
-                name=block["title"],
-                tags=[
-                    self.GENERIC_WORLD_WATCH_BULLETIN_TAG,
-                    self.get_world_watch_tag(tipreport_id),
-                    *block['tags']
-                ]
-            ).model_dump()
-            for block in content_block_list
-        ]
-
-        compared_dt = datetime.now() - timedelta(hours=config.upload_frequency)
-        if last_modified:
-            compared_dt = last_modified
-
-        mapped_blocks = list(
-            filter(
-                lambda x: parser.parse(x['modified_ts']).replace(tzinfo=timezone.utc) > compared_dt.replace(tzinfo=timezone.utc),
-                mapped_blocks
-            )
-        )
-
-        return mapped_blocks
-
 
     def patch_existing_tipreport(self, advisory, tipreport_id, last_modified):
         patch_url = f"{self.anomali_url}/api/v1/tipreport/{tipreport_id}/"
-
-
-        mapped_blocks = self.map_ww_content_block_to_anomali(tipreport_id, advisory['content_blocks'], last_modified)
-
         patch_payload = {
-            "objects": mapped_blocks
+            "objects": [
+                PatchTipReportModel(
+                body=advisory['html'],
+                modified_ts=datetime.strftime(parser.parse(advisory['timestamp_updated']), ANOMALI_TIME_FORMAT),
+                name=advisory["title"],
+                tags=[
+                    self.GENERIC_WORLD_WATCH_BULLETIN_TAG,
+                    self.get_world_watch_tag(tipreport_id),
+                    *advisory['tags']
+                ]
+            ).model_dump()
+            ]
         }
-        if len(mapped_blocks) == 0:
-            self.logger.debug(f"Tipreport {tipreport_id} already up to date")
-            return
 
         self.logger.debug(f"Applying patch content blocks to existing tipreport {tipreport_id}, last modified at {last_modified.strftime('%B %d, %Y %I:%M %p')}")
 
@@ -236,52 +213,31 @@ class AnomaliApi:
 
         self.logger.debug(f"Patch response: {response.status_code}, {response.content}")
 
-
-
-
     def add_new_tipreport(self, advisory):
         add_tipreport_url = f"{self.anomali_url}/api/v1/tipreport/"
 
         advisory_id = advisory['id']
-        content_blocks = advisory['content_blocks']
-        earliest_content_block = advisory['content_blocks'][-1]
+        html_content = advisory['html']
 
         report_model: AnomaliTipReportModel = AnomaliTipReportModel(
-            body=earliest_content_block['executive_summary'],
+            body=html_content,
             created_ts=advisory['timestamp_created'],
             modified_ts=advisory['timestamp_updated'],
             name=advisory['title'],
             tags=[
                 self.get_world_watch_tag(advisory_id),
-                self.GENERIC_WORLD_WATCH_BULLETIN_TAG
+                self.GENERIC_WORLD_WATCH_BULLETIN_TAG,
+                *advisory['tags']
             ]
         )
 
         response = requests.post(add_tipreport_url, json=report_model.model_dump(), headers=self.headers)
 
-        self.logger.debug("Added new bulletin")
+        if response.status_code not in SUCCESSFUL_HTTP_CODES:
+            self.logger.error(f"Cannot add new bulletin {advisory['id']} - \"{advisory['title']}\", {response.content}, {response.status_code}")
+            return
 
-        tipreport_id: int = response.json()['id']
-        patch_url = f"{self.anomali_url}/api/v1/tipreport/{tipreport_id}/"
-        mapped_blocks = self.map_ww_content_block_to_anomali(
-                            tipreport_id,
-                            content_blocks[:-1]
-                        )
-
-        if len(mapped_blocks) > 1:
-            patch_payload = {"objects": mapped_blocks}
-
-            r = requests.patch(
-                url=patch_url,
-                json=patch_payload,
-                headers=self.headers
-            )
-
-            if r.status_code not in SUCCESSFUL_HTTP_CODES:
-                raise HTTPException(f"Cannot patch bulletin in anomali, {r.content}, {r.status_code}")
-
-            self.logger.debug(f"Updated newly created tipreport {tipreport_id} history")
-
+        self.logger.info(f"Successfully added new bulletin {advisory['id']} - \"{advisory['title']}\" with Anomali id {response.json()['id']}")
 
     def upload_bulletins(self, advisories):
         for advisory in advisories:
@@ -458,14 +414,23 @@ class Datalake2Anomali:
         specific_advisory_endpoint = f"{self.world_watch_url}/api/advisory"
         complete_advisories = []
 
+        complete_htmls = []
+
+        items = r.json()['items']
         for item in r.json()['items']:
-            r = requests.get(f"{specific_advisory_endpoint}/{item['id']}", headers=self.world_watch_headers)
+            r = requests.get(f"{specific_advisory_endpoint}/{item['id']}/html", headers=self.world_watch_headers)
 
             if r.status_code not in SUCCESSFUL_HTTP_CODES:
                 raise HTTPException(f"Cannot get complete advisory, {r.content}, {r.status_code}")
 
-            complete_advisory = r.json()
-            complete_advisories.append(complete_advisory)
+            complete_htmls.append(r.json()['html'])
+
+        complete_advisories = []
+
+        for idx, item in enumerate(items):
+            html_content = complete_htmls[idx]
+            item['html'] = html_content
+            complete_advisories.append(item)
 
         return complete_advisories
 
