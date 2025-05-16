@@ -186,9 +186,7 @@ class AnomaliApi:
 
     def patch_existing_tipreport(self, advisory, tipreport_id, last_modified):
         patch_url = f"{self.anomali_url}/api/v1/tipreport/{tipreport_id}/"
-        patch_payload = {
-            "objects": [
-                PatchTipReportModel(
+        patch_payload = PatchTipReportModel(
                 body=advisory['html'],
                 modified_ts=datetime.strftime(parser.parse(advisory['timestamp_updated']), ANOMALI_TIME_FORMAT),
                 name=advisory["title"],
@@ -198,10 +196,9 @@ class AnomaliApi:
                     *advisory['tags']
                 ]
             ).model_dump()
-            ]
-        }
 
-        self.logger.debug(f"Applying patch content blocks to existing tipreport {tipreport_id}, last modified at {last_modified.strftime('%B %d, %Y %I:%M %p')}")
+
+        self.logger.debug(f"Applying patch to existing tipreport {tipreport_id}, last modified at {last_modified.strftime('%B %d, %Y %I:%M %p')}")
 
         response = requests.patch(url=patch_url,
                     json=patch_payload,
