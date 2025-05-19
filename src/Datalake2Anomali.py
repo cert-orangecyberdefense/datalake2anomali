@@ -152,8 +152,10 @@ class AnomaliApi:
 
         tipreport_list = r.json()['objects']
 
-        if not (len(tipreport_list) > 0):
+
+        if len(tipreport_list) == 0:
             self.logger.debug(f"Did not find previous report with worldwatch id {id}")
+            self.logger.debug(r.request.url)
             return None, None
 
 
@@ -186,26 +188,30 @@ class AnomaliApi:
 
     def patch_existing_tipreport(self, advisory, tipreport_id, last_modified):
         patch_url = f"{self.anomali_url}/api/v1/tipreport/{tipreport_id}/"
+        all_tags = [
+                    self.GENERIC_WORLD_WATCH_BULLETIN_TAG,
+                    self.get_world_watch_tag(advisory['id']),
+                    *advisory['tags']
+                ]
+        mapped_tags = list(map(lambda x: {"name": x}, all_tags))
+        self.logger.debug(f"All tags are: {mapped_tags}")
+
         patch_payload = PatchTipReportModel(
                 body=advisory['html'],
                 modified_ts=datetime.strftime(parser.parse(advisory['timestamp_updated']), ANOMALI_TIME_FORMAT),
                 name=advisory["title"],
-                tags=[
-                    self.GENERIC_WORLD_WATCH_BULLETIN_TAG,
-                    self.get_world_watch_tag(tipreport_id),
-                    *advisory['tags']
-                ]
+                tags_v2=list(map(lambda x: {"name": x}, all_tags)),
             ).model_dump()
 
 
-        self.logger.debug(f"Applying patch to existing tipreport {tipreport_id}, last modified at {last_modified.strftime('%B %d, %Y %I:%M %p')}")
+        self.logger.info(f"Applying patch to existing tipreport {tipreport_id} correlated with advisory {advisory['id']}, last modified at {last_modified.strftime('%B %d, %Y %I:%M %p')}")
 
         response = requests.patch(url=patch_url,
                     json=patch_payload,
                     headers=self.headers)
 
         if response.status_code not in SUCCESSFUL_HTTP_CODES:
-            raise HTTPException(f"Cannot patch report, {response.content}, {response.status_code}")
+            raise HTTPException(f"Cannot patch report {tipreport_id} correlated with advisory {advisory['id']}, {response.content}, {response.status_code}")
 
 
         self.logger.debug(f"Patch response: {response.status_code}, {response.content}")
@@ -215,17 +221,18 @@ class AnomaliApi:
 
         advisory_id = advisory['id']
         html_content = advisory['html']
+        all_tags=[
+                self.get_world_watch_tag(advisory_id),
+                self.GENERIC_WORLD_WATCH_BULLETIN_TAG,
+                *advisory['tags']
+            ]
 
         report_model: AnomaliTipReportModel = AnomaliTipReportModel(
             body=html_content,
             created_ts=advisory['timestamp_created'],
             modified_ts=advisory['timestamp_updated'],
             name=advisory['title'],
-            tags=[
-                self.get_world_watch_tag(advisory_id),
-                self.GENERIC_WORLD_WATCH_BULLETIN_TAG,
-                *advisory['tags']
-            ]
+            tags=all_tags,
         )
 
         response = requests.post(add_tipreport_url, json=report_model.model_dump(), headers=self.headers)
