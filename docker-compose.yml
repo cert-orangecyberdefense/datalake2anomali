@@ -5,3 +5,5 @@ services:
     image: datalake2anomali
     restart: "no"
     network_mode: "host"
+    volumes:
+      - ./logs:/code/logs
