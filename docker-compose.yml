@@ -7,3 +7,4 @@ services:
     network_mode: "host"
     volumes:
       - ./logs:/code/logs
+    env_file: src/.env
