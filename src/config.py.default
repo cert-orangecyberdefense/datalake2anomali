@@ -30,7 +30,7 @@ add_dtl_tags = False
 # possible values for anomali_severity : low, medium, high, very-high
 datalake_queries = [
     {
-        "query_hash": "346f3acbcb29f476d56b6689c36ea6d4",
+        "query_hash": "647decf51906d23f69b3ed92e7faeffa",
         "dataset_name": "ocd_peerpressure_c2_tracker_ips",
         "anomali_severity": "very-high",
         "anomali_itype": {
