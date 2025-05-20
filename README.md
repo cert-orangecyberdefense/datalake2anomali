@@ -11,7 +11,7 @@ Rename the file `src/.env.default` to `src/.env` and replace the environment var
 * Modify the `OCD_DATALAKE_LONG_TERM_TOKEN` and copy here a **Datalake** LongTermToken generated from [My account](https://datalake.cert.orangecyberdefense.com/gui/my-account) page.
   * **IMPORTANT**: the user account used to generate the LongTermToken needs to have `bulk_search` permission.
 * Then provide your **Anomali ThreatStream** URL and credentials using the following variables: `ANOMALI_URL`, `ANOMALI_USER` and `ANOMALI_API_KEY`
-  * **IMPORTANT**: you must have `Approve Intel` user permission in Anomali ThreatStream to import data via this connector. 
+  * **IMPORTANT**: you must have `Approve Intel` user permission in Anomali ThreatStream to import data via this connector.
 
 ### Configuration
 
@@ -29,7 +29,10 @@ The `datalake_queries` defines the list of queries to export indicators from the
 - **[required]** `query_hash` is the query hash of the Datalake search for which you want to import the data into Anomali. It could be found at the end of the URL when you create your search in the Datalake web interface `https://datalake.cert.orangecyberdefense.com/gui/search?query_hash=<query_hash>`
 - **[required]** `dataset_name` will be added as a **tag** to each indicator uploaded and belonging to this search. It's then an easy way to find corresponding indicators in Anomali ThreatStream.
 - **[required]** `anomali_severity` defines the **Anomali severity** for uploaded indicators.
-- **[optional]** `anomali_itype` if defined allows you to force the **Anomali iType** that will be used for each indicator type. If not defined or missing for some indicator type the default iType specified by `default_itype` will be used. 
+- **[optional]** `anomali_itype` if defined allows you to force the **Anomali iType** that will be used for each indicator type. If not defined or missing for some indicator type the default iType specified by `default_itype` will be used.
+
+#### WorldWatch threat bulletins
+Add and update threat bulletins to **Anomali Threatstream**, you can get the bulletins from the last "x" hours by setting `run_as_cron = False` and `upload_frequency = x`, otherwise if you want bulletins to be added as soon as they are periodically added to WorldWatch, set `run_as_cron = True` and `upload_frequency = <desired-update-period-in-hours>`.
 
 ## Usage
 You can use **Docker** or launch the connector as a standalone Python **script**.
@@ -46,4 +49,3 @@ To launch the connector out of docker you can follow this steps:
 4) launch the connector `python src/core.py`
 5) (You can exit the virtual environment with the `deactivate` command)
 Or you can use the make command `start_standalone`
-
