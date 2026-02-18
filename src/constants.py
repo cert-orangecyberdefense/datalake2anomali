@@ -22,7 +22,6 @@ ANOMALI_PAYLOAD_TEMPLATE = {
 ANOMALI_OBJECT_TEMPLATE = {"confidence": "", "itype": "", "severity": "", "tags": []}
 
 DTL_TO_ANOMALI_TYPE = {
-    "fqdn": "domain",
     "domain": "domain",
     "ip": "srcip",
     "url": "url",
